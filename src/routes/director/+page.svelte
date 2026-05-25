@@ -4,6 +4,9 @@
 	import { onChangeScene, sendChangeScene } from '$lib/services/realtime';
 
 	let selectedCameraId = $state<string | null>(cameras[0]?.id ?? null);
+
+	const previewUrl = (url: string) =>
+		`${url}${url.includes('?') ? '&' : '?'}clean&autoplay&muted`;
 	let error = $state('');
 	let sending = $state(false);
 
@@ -50,15 +53,18 @@
 
 	<section class="camera-grid">
 		{#each cameras as camera}
-			<article class="camera-card">
-				<h2>{camera.name}</h2>
-				<p class="camera-id">ID: {camera.id}</p>
-				<p class="camera-url">URL: {camera.url}</p>
+			<article class="camera-card" class:on-air={selectedCameraId === camera.id}>
+				<header class="card-header">
+					<h2>{camera.name}</h2>
+					{#if selectedCameraId === camera.id}
+						<span class="on-air-badge">● En Vivo</span>
+					{/if}
+				</header>
 				<iframe
-					title={`Miniatura de ${camera.name}`}
-					src={camera.url}
+					title={`Previo de ${camera.name}`}
+					src={previewUrl(camera.url)}
 					loading="lazy"
-					allow="camera; microphone; fullscreen; display-capture"
+					allow="camera; microphone; autoplay; fullscreen; display-capture"
 				></iframe>
 				<button onclick={() => handleSendToAir(camera.id)} disabled={sending}>
 					{#if selectedCameraId === camera.id}
@@ -88,7 +94,7 @@
 	}
 
 	.camera-card {
-		border: 1px solid #d1d5db;
+		border: 2px solid #d1d5db;
 		border-radius: 0.75rem;
 		padding: 1rem;
 		display: grid;
@@ -96,22 +102,31 @@
 		background: #fff;
 	}
 
+	.camera-card.on-air {
+		border-color: #dc2626;
+		box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+	}
+
+	.card-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
 	h2 {
 		margin: 0;
 		font-size: 1.2rem;
 	}
 
-	.camera-id {
-		margin: 0;
-		color: #475569;
-		font-size: 0.9rem;
-	}
-
-	.camera-url {
-		margin: 0;
-		color: #475569;
-		font-size: 0.85rem;
-		word-break: break-all;
+	.on-air-badge {
+		margin-left: auto;
+		padding: 0.2rem 0.55rem;
+		border-radius: 999px;
+		background: #dc2626;
+		color: #fff;
+		font-size: 0.75rem;
+		font-weight: 700;
+		white-space: nowrap;
 	}
 
 	iframe {

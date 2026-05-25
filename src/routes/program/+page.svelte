@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import DirectorDashboard from '$lib/components/DirectorDashboard.svelte';
+	import ProgramView from '$lib/components/ProgramView.svelte';
 
 	const sessionId = page.url.searchParams.get('session') ?? '';
 </script>
 
-<DirectorDashboard {sessionId} />
+<ProgramView {sessionId} />

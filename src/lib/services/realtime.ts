@@ -1,14 +1,16 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '$lib/supabaseClient';
 
-const SCENES_CHANNEL = 'escenas';
 const CHANGE_SCENE_EVENT = 'change-scene';
+const scenesChannel = (userId: string) => `escenas-${userId}`;
 
 let directorChannelPromise: Promise<RealtimeChannel> | null = null;
+let directorChannelUserId: string | null = null;
 
-const createSubscribedChannel = () =>
+const createSubscribedChannel = (userId: string) =>
 	new Promise<RealtimeChannel>((resolve, reject) => {
-		const channel = supabase.channel(SCENES_CHANNEL, {
+		const channelName = scenesChannel(userId);
+		const channel = supabase.channel(channelName, {
 			config: { broadcast: { self: false } }
 		});
 
@@ -18,14 +20,23 @@ const createSubscribedChannel = () =>
 			}
 
 			if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-				reject(new Error(`Realtime channel "${SCENES_CHANNEL}" status: ${status}`));
+				reject(new Error(`Realtime channel "${channelName}" status: ${status}`));
 			}
 		});
 	});
 
-const getDirectorChannel = () => {
-	if (!directorChannelPromise) {
-		directorChannelPromise = createSubscribedChannel();
+const getDirectorChannel = async () => {
+	const {
+		data: { user }
+	} = await supabase.auth.getUser();
+
+	if (!user) {
+		throw new Error('No hay un usuario autenticado.');
+	}
+
+	if (!directorChannelPromise || directorChannelUserId !== user.id) {
+		directorChannelUserId = user.id;
+		directorChannelPromise = createSubscribedChannel(user.id);
 	}
 
 	return directorChannelPromise;
@@ -41,8 +52,8 @@ export const sendChangeScene = async (cameraId: string) => {
 	});
 };
 
-export const onChangeScene = (callback: (cameraId: string) => void) => {
-	const channel = supabase.channel(SCENES_CHANNEL, {
+export const onChangeScene = (userId: string, callback: (cameraId: string) => void) => {
+	const channel = supabase.channel(scenesChannel(userId), {
 		config: { broadcast: { self: false } }
 	});
 

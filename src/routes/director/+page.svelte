@@ -1,89 +1,43 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import { onDestroy } from 'svelte';
-	import { supabase } from '$lib/supabaseClient';
+	import { cameras } from '$lib/cameras';
+	import { onChangeScene, sendChangeScene } from '$lib/services/realtime';
 
-	type Camera = {
-		id: string;
-		name: string;
-		url: string;
-	};
-
-	const cameras: Camera[] = [
-		{
-			id: 'cam-1',
-			name: 'Cámara 1',
-			url: 'https://vdo.ninja/?view=cam-1'
-		},
-		{
-			id: 'cam-2',
-			name: 'Cámara 2',
-			url: 'https://vdo.ninja/?view=cam-2'
-		},
-		{
-			id: 'cam-3',
-			name: 'Cámara 3',
-			url: 'https://vdo.ninja/?view=cam-3'
-		}
-	];
-
-	let directorChannel: ReturnType<typeof supabase.channel> | null = null;
-	let selectedCameraId = $state<string | null>(null);
+	let selectedCameraId = $state<string | null>(cameras[0]?.id ?? null);
 	let error = $state('');
 	let sending = $state(false);
 
-	const subscribeChannel = async () => {
-		if (!browser) return false;
-
-		const channel = (directorChannel ??= supabase.channel('director-control'));
-
-		if (channel.state === 'joined') return true;
-
-		const status = await new Promise<string>((resolve) => {
-			channel.subscribe((channelStatus) => resolve(channelStatus));
-		});
-
-		return status === 'SUBSCRIBED';
-	};
-
 	const handleSendToAir = async (cameraId: string) => {
+		if (!cameras.some((camera) => camera.id === cameraId)) {
+			return;
+		}
+
 		error = '';
 		sending = true;
 
-		const isReady = await subscribeChannel();
-		if (!isReady) {
+		try {
+			const sendStatus = await sendChangeScene(cameraId);
+			if (sendStatus !== 'ok') {
+				error = 'No se pudo mandar la cámara al aire.';
+				return;
+			}
+
+			selectedCameraId = cameraId;
+		} catch {
 			error = 'No se pudo conectar al canal de transmisión en tiempo real.';
+		} finally {
 			sending = false;
-			return;
 		}
-
-		const channel = directorChannel;
-		if (!channel) {
-			error = 'No se pudo conectar al canal de transmisión en tiempo real.';
-			sending = false;
-			return;
-		}
-
-		const sendStatus = await channel.send({
-			type: 'broadcast',
-			event: 'camera-on-air',
-			payload: { cameraId }
-		});
-
-		sending = false;
-
-		if (sendStatus !== 'ok') {
-			error = 'No se pudo mandar la cámara al aire.';
-			return;
-		}
-
-		selectedCameraId = cameraId;
 	};
 
-	onDestroy(() => {
-		if (directorChannel) {
-			void supabase.removeChannel(directorChannel);
+	const unsubscribe = onChangeScene((cameraId) => {
+		if (cameras.some((camera) => camera.id === cameraId)) {
+			selectedCameraId = cameraId;
 		}
+	});
+
+	onDestroy(() => {
+		unsubscribe();
 	});
 </script>
 

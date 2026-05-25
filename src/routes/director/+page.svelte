@@ -1,11 +1,22 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
-	import { cameras } from '$lib/cameras';
+	import { onDestroy, onMount } from 'svelte';
+	import type { Camera } from '$lib/cameras';
+	import { getCameras } from '$lib/services/db';
 	import { onChangeScene, sendChangeScene } from '$lib/services/realtime';
 
-	let selectedCameraId = $state<string | null>(cameras[0]?.id ?? null);
+	let cameras = $state<Camera[]>([]);
+	let selectedCameraId = $state<string | null>(null);
 	let error = $state('');
 	let sending = $state(false);
+
+	onMount(async () => {
+		try {
+			cameras = await getCameras();
+			selectedCameraId = cameras[0]?.id ?? null;
+		} catch {
+			error = 'No se pudieron cargar las cámaras.';
+		}
+	});
 
 	const handleSendToAir = async (cameraId: string) => {
 		if (!cameras.some((camera) => camera.id === cameraId)) {

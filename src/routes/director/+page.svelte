@@ -1,14 +1,82 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
-	import { cameras } from '$lib/cameras';
+	import { onDestroy, onMount } from 'svelte';
+	import type { Camera } from '$lib/cameras';
+	import { deleteCamera, getCameras, insertCamera } from '$lib/services/db';
 	import { onChangeScene, sendChangeScene } from '$lib/services/realtime';
 
-	let selectedCameraId = $state<string | null>(cameras[0]?.id ?? null);
+	let cameras = $state<Camera[]>([]);
+	let selectedCameraId = $state<string | null>(null);
+	let sceneName = $state('');
+	let cameraUrl = $state('');
 
 	const previewUrl = (url: string) =>
 		`${url}${url.includes('?') ? '&' : '?'}clean&autoplay&muted`;
 	let error = $state('');
+	let loadingCameras = $state(true);
+	let saving = $state(false);
 	let sending = $state(false);
+	let deletingCameraId = $state<string | null>(null);
+
+	const syncSelectedCamera = () => {
+		if (!cameras.some((camera) => camera.id === selectedCameraId)) {
+			selectedCameraId = cameras[0]?.id ?? null;
+		}
+	};
+
+	const loadCameras = async () => {
+		loadingCameras = true;
+		error = '';
+
+		try {
+			cameras = await getCameras();
+			syncSelectedCamera();
+		} catch {
+			error = 'No se pudo cargar la lista de cámaras.';
+		} finally {
+			loadingCameras = false;
+		}
+	};
+
+	const handleAddCamera = async (event: SubmitEvent) => {
+		event.preventDefault();
+
+		const name = sceneName.trim();
+		const url = cameraUrl.trim();
+
+		if (!name || !url) {
+			return;
+		}
+
+		error = '';
+		saving = true;
+
+		try {
+			const camera = await insertCamera(name, url);
+			cameras = [...cameras, camera];
+			sceneName = '';
+			cameraUrl = '';
+			syncSelectedCamera();
+		} catch {
+			error = 'No se pudo añadir la cámara.';
+		} finally {
+			saving = false;
+		}
+	};
+
+	const handleDeleteCamera = async (cameraId: string) => {
+		deletingCameraId = cameraId;
+		error = '';
+
+		try {
+			await deleteCamera(cameraId);
+			cameras = cameras.filter((camera) => camera.id !== cameraId);
+			syncSelectedCamera();
+		} catch {
+			error = 'No se pudo eliminar la cámara.';
+		} finally {
+			deletingCameraId = null;
+		}
+	};
 
 	const handleSendToAir = async (cameraId: string) => {
 		if (!cameras.some((camera) => camera.id === cameraId)) {
@@ -39,6 +107,10 @@
 		}
 	});
 
+	onMount(() => {
+		void loadCameras();
+	});
+
 	onDestroy(() => {
 		unsubscribe();
 	});
@@ -47,18 +119,58 @@
 <main class="director-panel">
 	<h1>Panel de Control del Director</h1>
 
+	<form class="camera-form" onsubmit={handleAddCamera}>
+		<label>
+			<span>Nombre de la Escena</span>
+			<input
+				type="text"
+				bind:value={sceneName}
+				placeholder="Ej. Cámara principal"
+				required
+			/>
+		</label>
+
+		<label>
+			<span>URL de VDO.Ninja</span>
+			<input
+				type="url"
+				bind:value={cameraUrl}
+				placeholder="https://vdo.ninja/?view=..."
+				required
+			/>
+		</label>
+
+		<button type="submit" disabled={saving}>{saving ? 'Añadiendo...' : 'Añadir'}</button>
+	</form>
+
 	{#if error}
 		<p class="error-message">{error}</p>
 	{/if}
 
 	<section class="camera-grid">
-		{#each cameras as camera}
+		{#if loadingCameras}
+			<p class="status-message">Cargando cámaras...</p>
+		{:else if cameras.length === 0}
+			<p class="status-message">Todavía no hay cámaras registradas.</p>
+		{/if}
+
+		{#each cameras as camera (camera.id)}
 			<article class="camera-card" class:on-air={selectedCameraId === camera.id}>
-				<header class="card-header">
+				<header class="camera-card-header">
 					<h2>{camera.name}</h2>
 					{#if selectedCameraId === camera.id}
 						<span class="on-air-badge">● En Vivo</span>
 					{/if}
+					<button
+						type="button"
+						class="delete-button"
+						aria-label={`Eliminar ${camera.name}`}
+						title="Eliminar"
+						disabled={deletingCameraId === camera.id}
+						onclick={() => handleDeleteCamera(camera.id)}
+					>
+						🗑️
+					</button>
 				</header>
 				<iframe
 					title={`Previo de ${camera.name}`}
@@ -66,7 +178,7 @@
 					loading="lazy"
 					allow="camera; microphone; autoplay; fullscreen; display-capture"
 				></iframe>
-				<button onclick={() => handleSendToAir(camera.id)} disabled={sending}>
+				<button type="button" class="primary-button" onclick={() => handleSendToAir(camera.id)} disabled={sending}>
 					{#if selectedCameraId === camera.id}
 						En vivo ahora
 					{:else}
@@ -85,6 +197,28 @@
 
 	h1 {
 		margin: 0 0 1rem;
+	}
+
+	.camera-form {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+		align-items: end;
+	}
+
+	.camera-form label {
+		display: grid;
+		gap: 0.35rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+
+	.camera-form input {
+		font: inherit;
+		padding: 0.65rem 0.75rem;
+		border-radius: 0.5rem;
+		border: 1px solid #cbd5e1;
 	}
 
 	.camera-grid {
@@ -107,10 +241,11 @@
 		box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
 	}
 
-	.card-header {
+	.camera-card-header {
 		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+		align-items: start;
+		justify-content: space-between;
+		gap: 0.75rem;
 	}
 
 	h2 {
@@ -138,14 +273,29 @@
 
 	button {
 		font: inherit;
+		border-radius: 0.65rem;
+		cursor: pointer;
+	}
+
+	.primary-button {
+		font: inherit;
 		font-size: 1.1rem;
 		font-weight: 700;
 		padding: 0.9rem 0.75rem;
-		border-radius: 0.65rem;
 		border: 1px solid #0f172a;
 		background: #0f172a;
 		color: #fff;
-		cursor: pointer;
+	}
+
+	.delete-button {
+		display: inline-grid;
+		place-items: center;
+		width: 2rem;
+		height: 2rem;
+		padding: 0;
+		border: 1px solid #cbd5e1;
+		background: #fff;
+		font-size: 1rem;
 	}
 
 	button:disabled {
@@ -156,5 +306,10 @@
 	.error-message {
 		margin: 0 0 1rem;
 		color: #b91c1c;
+	}
+
+	.status-message {
+		margin: 0;
+		color: #475569;
 	}
 </style>

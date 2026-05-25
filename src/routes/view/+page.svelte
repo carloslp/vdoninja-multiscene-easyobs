@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { supabase } from '$lib/supabaseClient';
 	import { cameras } from '$lib/cameras';
-	import { SCENE_CHANNEL, SCENE_CHANGE_EVENT } from '$lib/sceneChannel';
+	import { onChangeScene } from '$lib/services/realtime';
 
 	const spectatorCameras = cameras.map((camera) => ({
 		...camera,
@@ -11,18 +10,14 @@
 
 	let activeCameraId = $state(spectatorCameras[0]?.id ?? '');
 
-	const channel = supabase
-		.channel(SCENE_CHANNEL)
-		.on('broadcast', { event: SCENE_CHANGE_EVENT }, ({ payload }) => {
-			const cameraId = payload?.cameraId;
-			if (typeof cameraId === 'string' && spectatorCameras.some((camera) => camera.id === cameraId)) {
-				activeCameraId = cameraId;
-			}
-		})
-		.subscribe();
+	const unsubscribe = onChangeScene((cameraId) => {
+		if (spectatorCameras.some((camera) => camera.id === cameraId)) {
+			activeCameraId = cameraId;
+		}
+	});
 
 	onDestroy(() => {
-		void supabase.removeChannel(channel);
+		unsubscribe();
 	});
 </script>
 

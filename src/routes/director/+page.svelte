@@ -17,6 +17,9 @@
 	let saving = $state(false);
 	let sending = $state(false);
 	let deletingCameraId = $state<string | null>(null);
+	let directorUserId = $state<string | null>(null);
+	let copiedCameraId = $state<string | null>(null);
+	let copiedTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const syncSelectedCamera = () => {
 		if (!cameras.some((camera) => camera.id === selectedCameraId)) {
@@ -102,6 +105,37 @@
 		}
 	};
 
+	const resetCopiedState = () => {
+		if (copiedTimeout) {
+			clearTimeout(copiedTimeout);
+			copiedTimeout = null;
+		}
+		copiedCameraId = null;
+	};
+
+	const handleCopyViewUrl = async (cameraId: string) => {
+		if (!directorUserId || typeof window === 'undefined' || !navigator.clipboard) {
+			error = 'No se pudo copiar el enlace de vista.';
+			return;
+		}
+
+		try {
+			const url = new URL(`/view/${directorUserId}`, window.location.origin).toString();
+			await navigator.clipboard.writeText(url);
+			error = '';
+			copiedCameraId = cameraId;
+			if (copiedTimeout) {
+				clearTimeout(copiedTimeout);
+			}
+			copiedTimeout = setTimeout(() => {
+				copiedCameraId = null;
+				copiedTimeout = null;
+			}, 1500);
+		} catch {
+			error = 'No se pudo copiar el enlace de vista.';
+		}
+	};
+
 	let unsubscribe: (() => void) | null = null;
 
 	onMount(async () => {
@@ -110,6 +144,7 @@
 			data: { user }
 		} = await supabase.auth.getUser();
 		if (user) {
+			directorUserId = user.id;
 			unsubscribe = onChangeScene(user.id, (cameraId) => {
 				if (cameras.some((camera) => camera.id === cameraId)) {
 					selectedCameraId = cameraId;
@@ -119,6 +154,7 @@
 	});
 
 	onDestroy(() => {
+		resetCopiedState();
 		unsubscribe?.();
 	});
 </script>
@@ -168,6 +204,22 @@
 					{#if selectedCameraId === camera.id}
 						<span class="on-air-badge">● En Vivo</span>
 					{/if}
+					<button
+						type="button"
+						class="copy-button"
+						aria-label="Copiar enlace de la escena"
+						title={copiedCameraId === camera.id
+							? '¡Copiado!'
+							: 'Copiar URL para el invitado / OBS'}
+						onclick={(event) => {
+							event.stopPropagation();
+							void handleCopyViewUrl(camera.id);
+						}}
+					>
+						<span class="copy-icon" aria-hidden="true">
+							{#if copiedCameraId === camera.id}✅{:else}📋{/if}
+						</span>
+					</button>
 					<button
 						type="button"
 						class="delete-button"
@@ -303,6 +355,33 @@
 		border: 1px solid #cbd5e1;
 		background: #fff;
 		font-size: 1rem;
+	}
+
+	.copy-button {
+		display: inline-grid;
+		place-items: center;
+		width: 2rem;
+		height: 2rem;
+		padding: 0;
+		border: 1px solid #cbd5e1;
+		background: #fff;
+		color: #64748b;
+		transition: background-color 0.15s ease;
+	}
+
+	.copy-button:hover,
+	.copy-button:focus-visible {
+		background: #e2e8f0;
+	}
+
+	.copy-button:focus-visible {
+		outline: 2px solid #0f172a;
+		outline-offset: 2px;
+	}
+
+	.copy-icon {
+		font-size: 1rem;
+		line-height: 1;
 	}
 
 	button:disabled {

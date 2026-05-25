@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { supabase } from '$lib/supabaseClient';
 	import type { Camera } from '$lib/cameras';
+	import { deleteCamera, getCameras, insertCamera } from '$lib/services/db';
 	import { onChangeScene, sendChangeScene } from '$lib/services/realtime';
-
-	const CAMERAS_TABLE = 'cameras';
 
 	let cameras = $state<Camera[]>([]);
 	let selectedCameraId = $state<string | null>(null);
@@ -26,17 +24,14 @@
 		loadingCameras = true;
 		error = '';
 
-		const { data, error: loadError } = await supabase.from(CAMERAS_TABLE).select('id, name, url');
-
-		loadingCameras = false;
-
-		if (loadError) {
+		try {
+			cameras = await getCameras();
+			syncSelectedCamera();
+		} catch {
 			error = 'No se pudo cargar la lista de cámaras.';
-			return;
+		} finally {
+			loadingCameras = false;
 		}
-
-		cameras = data ?? [];
-		syncSelectedCamera();
 	};
 
 	const handleAddCamera = async (event: SubmitEvent) => {
@@ -52,40 +47,32 @@
 		error = '';
 		saving = true;
 
-		const { data, error: insertError } = await supabase
-			.from(CAMERAS_TABLE)
-			.insert({ name, url })
-			.select('id, name, url')
-			.single();
-
-		saving = false;
-
-		if (insertError || !data) {
+		try {
+			const camera = await insertCamera(name, url);
+			cameras = [...cameras, camera];
+			sceneName = '';
+			cameraUrl = '';
+			syncSelectedCamera();
+		} catch {
 			error = 'No se pudo añadir la cámara.';
-			return;
+		} finally {
+			saving = false;
 		}
-
-		cameras = [...cameras, data];
-		sceneName = '';
-		cameraUrl = '';
-		syncSelectedCamera();
 	};
 
 	const handleDeleteCamera = async (cameraId: string) => {
 		deletingCameraId = cameraId;
 		error = '';
 
-		const { error: deleteError } = await supabase.from(CAMERAS_TABLE).delete().eq('id', cameraId);
-
-		deletingCameraId = null;
-
-		if (deleteError) {
+		try {
+			await deleteCamera(cameraId);
+			cameras = cameras.filter((camera) => camera.id !== cameraId);
+			syncSelectedCamera();
+		} catch {
 			error = 'No se pudo eliminar la cámara.';
-			return;
+		} finally {
+			deletingCameraId = null;
 		}
-
-		cameras = cameras.filter((camera) => camera.id !== cameraId);
-		syncSelectedCamera();
 	};
 
 	const handleSendToAir = async (cameraId: string) => {

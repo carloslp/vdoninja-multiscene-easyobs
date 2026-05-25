@@ -9,9 +9,11 @@
 	let selectedCameraId = $state<string | null>(null);
 	let sceneName = $state('');
 	let cameraUrl = $state('');
+	let mutedCameraIds = $state<Set<string>>(new Set());
+	let hiddenCameraIds = $state<Set<string>>(new Set());
 
-	const previewUrl = (url: string) =>
-		`${url}${url.includes('?') ? '&' : '?'}clean&autoplay&muted`;
+	const previewUrl = (url: string, muted: boolean) =>
+		`${url}${url.includes('?') ? '&' : '?'}clean&autoplay${muted ? '&muted' : ''}`;
 	let error = $state('');
 	let loadingCameras = $state(true);
 	let saving = $state(false);
@@ -71,6 +73,8 @@
 		try {
 			await deleteCamera(cameraId);
 			cameras = cameras.filter((camera) => camera.id !== cameraId);
+			mutedCameraIds = new Set([...mutedCameraIds].filter((id) => id !== cameraId));
+			hiddenCameraIds = new Set([...hiddenCameraIds].filter((id) => id !== cameraId));
 			syncSelectedCamera();
 		} catch {
 			error = 'No se pudo eliminar la cámara.';
@@ -102,9 +106,58 @@
 		}
 	};
 
+	const toggleMuted = (cameraId: string) => {
+		const nextMuted = new Set(mutedCameraIds);
+		if (nextMuted.has(cameraId)) {
+			nextMuted.delete(cameraId);
+		} else {
+			nextMuted.add(cameraId);
+		}
+		mutedCameraIds = nextMuted;
+	};
+
+	const toggleHidden = (cameraId: string) => {
+		const nextHidden = new Set(hiddenCameraIds);
+		if (nextHidden.has(cameraId)) {
+			nextHidden.delete(cameraId);
+		} else {
+			nextHidden.add(cameraId);
+		}
+		hiddenCameraIds = nextHidden;
+	};
+
+	const handleGridShortcut = (event: KeyboardEvent) => {
+		if ((event.target as HTMLElement)?.closest('input, textarea, select, button')) {
+			return;
+		}
+		if (!cameras.length || event.metaKey || event.ctrlKey || event.altKey) {
+			return;
+		}
+
+		const index = Number.parseInt(event.key, 10);
+		if (Number.isInteger(index) && index > 0 && index <= cameras.length) {
+			void handleSendToAir(cameras[index - 1].id);
+			return;
+		}
+
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+			return;
+		}
+
+		event.preventDefault();
+		const currentIndex = cameras.findIndex((camera) => camera.id === selectedCameraId);
+		const fallbackIndex = currentIndex === -1 ? 0 : currentIndex;
+		const nextIndex =
+			event.key === 'ArrowRight'
+				? (fallbackIndex + 1) % cameras.length
+				: (fallbackIndex - 1 + cameras.length) % cameras.length;
+		void handleSendToAir(cameras[nextIndex].id);
+	};
+
 	let unsubscribe: (() => void) | null = null;
 
 	onMount(async () => {
+		window.addEventListener('keydown', handleGridShortcut);
 		void loadCameras();
 		const {
 			data: { user }
@@ -119,6 +172,9 @@
 	});
 
 	onDestroy(() => {
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('keydown', handleGridShortcut);
+		}
 		unsubscribe?.();
 	});
 </script>
@@ -153,6 +209,9 @@
 	{#if error}
 		<p class="error-message">{error}</p>
 	{/if}
+	<p class="shortcut-help">
+		Atajos: teclas <strong>1-9</strong> para mandar una escena al aire, y <strong>← / →</strong> para navegar.
+	</p>
 
 	<section class="camera-grid">
 		{#if loadingCameras}
@@ -179,19 +238,38 @@
 						🗑️
 					</button>
 				</header>
-				<iframe
-					title={`Previo de ${camera.name}`}
-					src={previewUrl(camera.url)}
-					loading="lazy"
-					allow="camera; microphone; autoplay; fullscreen; display-capture"
-				></iframe>
-				<button type="button" class="primary-button" onclick={() => handleSendToAir(camera.id)} disabled={sending}>
-					{#if selectedCameraId === camera.id}
-						En vivo ahora
+				<div class="video-tile">
+					{#if hiddenCameraIds.has(camera.id)}
+						<div class="hidden-state" aria-live="polite">Feed oculto</div>
 					{:else}
-						Mandar al Aire
+						<iframe
+							title={`Previo de ${camera.name}`}
+							src={previewUrl(camera.url, mutedCameraIds.has(camera.id))}
+							loading="lazy"
+							allow="camera; microphone; autoplay; fullscreen; display-capture"
+						></iframe>
 					{/if}
-				</button>
+					<div class="camera-toolbar">
+						<button type="button" class="tool-button" onclick={() => toggleMuted(camera.id)}>
+							{mutedCameraIds.has(camera.id) ? '🔇 Muted' : '🔊 Audio'}
+						</button>
+						<button type="button" class="tool-button" onclick={() => toggleHidden(camera.id)}>
+							{hiddenCameraIds.has(camera.id) ? '👁️ Mostrar' : '🙈 Ocultar'}
+						</button>
+						<button
+							type="button"
+							class="tool-button primary-tool-button"
+							onclick={() => handleSendToAir(camera.id)}
+							disabled={sending}
+						>
+							{#if selectedCameraId === camera.id}
+								En vivo ahora
+							{:else}
+								Mandar al Aire
+							{/if}
+						</button>
+					</div>
+				</div>
 			</article>
 		{/each}
 	</section>
@@ -230,8 +308,9 @@
 
 	.camera-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
 		gap: 1rem;
+		width: 100%;
 	}
 
 	.camera-card {
@@ -271,11 +350,48 @@
 		white-space: nowrap;
 	}
 
-	iframe {
+	.video-tile {
+		position: relative;
+		aspect-ratio: 16 / 9;
+		overflow: hidden;
+		border-radius: 0.6rem;
+	}
+
+	iframe,
+	.hidden-state {
 		width: 100%;
-		height: 12rem;
+		height: 100%;
 		border: 1px solid #cbd5e1;
 		border-radius: 0.5rem;
+		background: #0f172a;
+	}
+
+	.hidden-state {
+		display: grid;
+		place-items: center;
+		color: #e2e8f0;
+		font-weight: 700;
+	}
+
+	.camera-toolbar {
+		position: absolute;
+		left: 0.5rem;
+		right: 0.5rem;
+		bottom: 0.5rem;
+		display: flex;
+		gap: 0.45rem;
+		flex-wrap: wrap;
+		opacity: 0;
+		transform: translateY(0.35rem);
+		transition: opacity 0.15s ease, transform 0.15s ease;
+		pointer-events: none;
+	}
+
+	.video-tile:hover .camera-toolbar,
+	.video-tile:focus-within .camera-toolbar {
+		opacity: 1;
+		transform: translateY(0);
+		pointer-events: auto;
 	}
 
 	button {
@@ -284,14 +400,19 @@
 		cursor: pointer;
 	}
 
-	.primary-button {
-		font: inherit;
-		font-size: 1.1rem;
+	.tool-button {
+		font-size: 0.86rem;
 		font-weight: 700;
-		padding: 0.9rem 0.75rem;
-		border: 1px solid #0f172a;
-		background: #0f172a;
+		padding: 0.45rem 0.55rem;
+		border: 1px solid rgba(148, 163, 184, 0.9);
+		background: rgba(15, 23, 42, 0.85);
 		color: #fff;
+		backdrop-filter: blur(2px);
+	}
+
+	.primary-tool-button {
+		border-color: #0f172a;
+		background: #0f172a;
 	}
 
 	.delete-button {
@@ -318,5 +439,21 @@
 	.status-message {
 		margin: 0;
 		color: #475569;
+	}
+
+	.shortcut-help {
+		margin: 0 0 1rem;
+		font-size: 0.92rem;
+		color: #334155;
+	}
+
+	@media (max-width: 760px) {
+		.camera-toolbar {
+			position: static;
+			margin-top: 0.45rem;
+			opacity: 1;
+			transform: none;
+			pointer-events: auto;
+		}
 	}
 </style>

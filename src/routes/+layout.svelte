@@ -8,6 +8,7 @@
 	let { children } = $props();
 
 	const PRIVATE_ROUTES = ['/director'];
+	const CLEAN_ROUTES = ['/program'];
 
 	$effect(() => {
 		const { loading, user } = $auth;
@@ -27,7 +28,7 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-{#if $auth.user}
+{#if $auth.user && !CLEAN_ROUTES.some((r) => page.url.pathname.startsWith(r))}
 	<nav>
 		<button onclick={handleSignOut}>Cerrar sesión</button>
 	</nav>

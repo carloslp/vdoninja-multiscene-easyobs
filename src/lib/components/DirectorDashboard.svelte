@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
+import VDONinjaPlayer from '$lib/VDONinjaPlayer.svelte';
 import type { Camera } from '$lib/cameras';
 import { deleteCamera, getCameras, insertCamera } from '$lib/services/db';
 import { onChangeScene, sendChangeScene } from '$lib/services/realtime';
@@ -15,8 +16,6 @@ let cameraUrl = $state('');
 let mutedCameraIds = $state<Set<string>>(new Set());
 let hiddenCameraIds = $state<Set<string>>(new Set());
 
-const previewUrl = (url: string, muted: boolean) =>
-`${url}${url.includes('?') ? '&' : '?'}clean&autoplay${muted ? '&muted' : ''}`;
 let error = $state('');
 let loadingCameras = $state(true);
 let saving = $state(false);
@@ -340,12 +339,12 @@ handleDeleteCamera(camera.id);
 {#if hiddenCameraIds.has(camera.id)}
 <div class="hidden-state" aria-live="polite">Feed oculto</div>
 {:else}
-<iframe
+<VDONinjaPlayer
 title={`Previo de ${camera.name}`}
-src={previewUrl(camera.url, mutedCameraIds.has(camera.id))}
+streamUrl={camera.url}
+muted={mutedCameraIds.has(camera.id)}
 loading="lazy"
-allow="camera; microphone; autoplay; fullscreen; display-capture"
-></iframe>
+/>
 {/if}
 <div class="camera-toolbar">
 <button
@@ -520,7 +519,7 @@ overflow: hidden;
 border-radius: 0.6rem;
 }
 
-iframe,
+.video-tile :global(iframe),
 .hidden-state {
 width: 100%;
 height: 100%;

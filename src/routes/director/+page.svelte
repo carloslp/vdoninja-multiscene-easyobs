@@ -6,7 +6,8 @@
 	import { supabase } from '$lib/supabaseClient';
 
 	let cameras = $state<Camera[]>([]);
-	let selectedCameraId = $state<string | null>(null);
+	let liveCameraId = $state<string | null>(null);
+	let previewCameraId = $state<string | null>(null);
 	let sceneName = $state('');
 	let cameraUrl = $state('');
 
@@ -18,9 +19,13 @@
 	let sending = $state(false);
 	let deletingCameraId = $state<string | null>(null);
 
-	const syncSelectedCamera = () => {
-		if (!cameras.some((camera) => camera.id === selectedCameraId)) {
-			selectedCameraId = cameras[0]?.id ?? null;
+	const syncSceneState = () => {
+		if (!cameras.some((camera) => camera.id === previewCameraId)) {
+			previewCameraId = cameras[0]?.id ?? null;
+		}
+
+		if (!cameras.some((camera) => camera.id === liveCameraId)) {
+			liveCameraId = null;
 		}
 	};
 
@@ -30,7 +35,7 @@
 
 		try {
 			cameras = await getCameras();
-			syncSelectedCamera();
+			syncSceneState();
 		} catch {
 			error = 'No se pudo cargar la lista de cámaras.';
 		} finally {
@@ -56,7 +61,7 @@
 			cameras = [...cameras, camera];
 			sceneName = '';
 			cameraUrl = '';
-			syncSelectedCamera();
+			syncSceneState();
 		} catch {
 			error = 'No se pudo añadir la cámara.';
 		} finally {
@@ -71,7 +76,7 @@
 		try {
 			await deleteCamera(cameraId);
 			cameras = cameras.filter((camera) => camera.id !== cameraId);
-			syncSelectedCamera();
+			syncSceneState();
 		} catch {
 			error = 'No se pudo eliminar la cámara.';
 		} finally {
@@ -94,12 +99,21 @@
 				return;
 			}
 
-			selectedCameraId = cameraId;
+			liveCameraId = cameraId;
+			previewCameraId = cameraId;
 		} catch {
 			error = 'No se pudo conectar al canal de transmisión en tiempo real.';
 		} finally {
 			sending = false;
 		}
+	};
+
+	const handleSelectPreview = (cameraId: string) => {
+		if (!cameras.some((camera) => camera.id === cameraId)) {
+			return;
+		}
+
+		previewCameraId = cameraId;
 	};
 
 	let unsubscribe: (() => void) | null = null;
@@ -111,9 +125,7 @@
 		} = await supabase.auth.getUser();
 		if (user) {
 			unsubscribe = onChangeScene(user.id, (cameraId) => {
-				if (cameras.some((camera) => camera.id === cameraId)) {
-					selectedCameraId = cameraId;
-				}
+				liveCameraId = cameraId;
 			});
 		}
 	});
@@ -159,22 +171,50 @@
 			<p class="status-message">Cargando cámaras...</p>
 		{:else if cameras.length === 0}
 			<p class="status-message">Todavía no hay cámaras registradas.</p>
+		{:else}
+			<p class="status-message">
+				Haz clic en una tarjeta para ponerla en vista previa y luego vuelve a pulsar su botón para
+				mandarla al aire.
+			</p>
 		{/if}
 
 		{#each cameras as camera (camera.id)}
-			<article class="camera-card" class:on-air={selectedCameraId === camera.id}>
+			<div
+				class="camera-card"
+				class:on-air={liveCameraId === camera.id}
+				class:in-preview={previewCameraId === camera.id}
+				onclick={() => handleSelectPreview(camera.id)}
+				onkeydown={(event) => {
+					if (event.key === 'Enter' || event.key === ' ') {
+						event.preventDefault();
+						handleSelectPreview(camera.id);
+					}
+				}}
+				role="button"
+				tabindex="0"
+				aria-pressed={previewCameraId === camera.id}
+				aria-label={`Seleccionar ${camera.name} para vista previa`}
+			>
 				<header class="camera-card-header">
 					<h2>{camera.name}</h2>
-					{#if selectedCameraId === camera.id}
-						<span class="on-air-badge">● En Vivo</span>
-					{/if}
+					<div class="camera-state-badges">
+						{#if liveCameraId === camera.id}
+							<span class="state-badge on-air-badge">EN VIVO</span>
+						{/if}
+						{#if previewCameraId === camera.id}
+							<span class="state-badge preview-badge">VISTA PREVIA</span>
+						{/if}
+					</div>
 					<button
 						type="button"
 						class="delete-button"
 						aria-label={`Eliminar ${camera.name}`}
 						title="Eliminar"
 						disabled={deletingCameraId === camera.id}
-						onclick={() => handleDeleteCamera(camera.id)}
+						onclick={(event) => {
+							event.stopPropagation();
+							handleDeleteCamera(camera.id);
+						}}
 					>
 						🗑️
 					</button>
@@ -185,14 +225,29 @@
 					loading="lazy"
 					allow="camera; microphone; autoplay; fullscreen; display-capture"
 				></iframe>
-				<button type="button" class="primary-button" onclick={() => handleSendToAir(camera.id)} disabled={sending}>
-					{#if selectedCameraId === camera.id}
+				<button
+					type="button"
+					class="primary-button"
+					onclick={(event) => {
+						event.stopPropagation();
+						if (previewCameraId === camera.id) {
+							void handleSendToAir(camera.id);
+							return;
+						}
+
+						handleSelectPreview(camera.id);
+					}}
+					disabled={sending}
+				>
+					{#if liveCameraId === camera.id}
 						En vivo ahora
-					{:else}
+					{:else if previewCameraId === camera.id}
 						Mandar al Aire
+					{:else}
+						Poner en Vista previa
 					{/if}
 				</button>
-			</article>
+			</div>
 		{/each}
 	</section>
 </main>
@@ -235,17 +290,43 @@
 	}
 
 	.camera-card {
-		border: 2px solid #d1d5db;
+		border: 4px solid #d1d5db;
 		border-radius: 0.75rem;
 		padding: 1rem;
 		display: grid;
 		gap: 0.75rem;
 		background: #fff;
+		cursor: pointer;
+		transition:
+			border-color 0.2s ease,
+			box-shadow 0.2s ease,
+			transform 0.2s ease;
 	}
 
 	.camera-card.on-air {
 		border-color: #dc2626;
-		box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+		box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2);
+	}
+
+	.camera-card.in-preview {
+		border-color: #facc15;
+		box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.25);
+	}
+
+	.camera-card.on-air.in-preview {
+		border-color: #dc2626;
+		box-shadow:
+			0 0 0 4px rgba(220, 38, 38, 0.2),
+			0 0 0 8px rgba(250, 204, 21, 0.18);
+	}
+
+	.camera-card:hover,
+	.camera-card:focus-visible {
+		transform: translateY(-1px);
+	}
+
+	.camera-card:focus-visible {
+		outline: none;
 	}
 
 	.camera-card-header {
@@ -260,15 +341,30 @@
 		font-size: 1.2rem;
 	}
 
-	.on-air-badge {
+	.camera-state-badges {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: end;
+		gap: 0.35rem;
 		margin-left: auto;
+	}
+
+	.state-badge {
 		padding: 0.2rem 0.55rem;
 		border-radius: 999px;
-		background: #dc2626;
-		color: #fff;
 		font-size: 0.75rem;
 		font-weight: 700;
 		white-space: nowrap;
+	}
+
+	.on-air-badge {
+		background: #dc2626;
+		color: #fff;
+	}
+
+	.preview-badge {
+		background: #fef08a;
+		color: #854d0e;
 	}
 
 	iframe {

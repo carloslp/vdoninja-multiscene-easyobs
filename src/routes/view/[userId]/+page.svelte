@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
+	import VDONinjaPlayer from '$lib/VDONinjaPlayer.svelte';
 	import {
 		getMediaDevicesSelection,
 		getPreviewStream,
@@ -43,7 +44,7 @@
 		}
 
 		const selectedDevices = deviceParams.toString();
-		const base = `${baseUrl}${separator}clean&autoplay&transparent&cover`;
+		const base = `${baseUrl}${separator}transparent&cover`;
 		return selectedDevices ? `${base}&${selectedDevices}` : base;
 	};
 
@@ -205,12 +206,9 @@
 		</section>
 	{:else}
 		{#each spectatorCameras as camera (camera.id)}
-			<iframe
-				title={camera.name}
-				src={buildCameraUrl(camera.url)}
-				allow="autoplay; fullscreen; camera; microphone; display-capture"
-				class:visible={activeCameraId === camera.id}
-			></iframe>
+			<div class="player-frame" class:visible={activeCameraId === camera.id}>
+				<VDONinjaPlayer title={camera.name} streamUrl={buildCameraUrl(camera.url)} />
+			</div>
 		{/each}
 	{/if}
 </main>
@@ -321,19 +319,23 @@
 		color: #fca5a5;
 	}
 
-	iframe {
+	.player-frame {
 		position: absolute;
 		top: 0;
 		left: 0;
 		width: 100vw;
 		height: 100vh;
-		border: 0;
 		opacity: 0;
 		transition: opacity 0.5s ease;
 		pointer-events: none;
 	}
 
-	iframe.visible {
+	.player-frame.visible {
 		opacity: 1;
+	}
+
+	.player-frame :global(iframe) {
+		width: 100%;
+		height: 100%;
 	}
 </style>

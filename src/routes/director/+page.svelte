@@ -3,6 +3,7 @@
 	import type { Camera } from '$lib/cameras';
 	import { deleteCamera, getCameras, insertCamera } from '$lib/services/db';
 	import { onChangeScene, sendChangeScene } from '$lib/services/realtime';
+	import { supabase } from '$lib/supabaseClient';
 
 	let cameras = $state<Camera[]>([]);
 	let selectedCameraId = $state<string | null>(null);
@@ -101,18 +102,24 @@
 		}
 	};
 
-	const unsubscribe = onChangeScene((cameraId) => {
-		if (cameras.some((camera) => camera.id === cameraId)) {
-			selectedCameraId = cameraId;
+	let unsubscribe: (() => void) | null = null;
+
+	onMount(async () => {
+		void loadCameras();
+		const {
+			data: { user }
+		} = await supabase.auth.getUser();
+		if (user) {
+			unsubscribe = onChangeScene(user.id, (cameraId) => {
+				if (cameras.some((camera) => camera.id === cameraId)) {
+					selectedCameraId = cameraId;
+				}
+			});
 		}
 	});
 
-	onMount(() => {
-		void loadCameras();
-	});
-
 	onDestroy(() => {
-		unsubscribe();
+		unsubscribe?.();
 	});
 </script>
 

@@ -1,6 +1,19 @@
 import { supabase } from '$lib/supabaseClient';
 import type { Camera } from '$lib/cameras';
 
+export const getPublicCameras = async (userId: string): Promise<Camera[]> => {
+	const { data, error } = await supabase
+		.from('cameras')
+		.select('id, name, url')
+		.eq('user_id', userId);
+
+	if (error) {
+		throw new Error(error.message);
+	}
+
+	return data ?? [];
+};
+
 export const getCameras = async (): Promise<Camera[]> => {
 	const {
 		data: { user }

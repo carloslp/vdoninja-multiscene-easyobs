@@ -1,22 +1,25 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { page } from '$app/state';
 	import type { Camera } from '$lib/cameras';
-	import { getCameras } from '$lib/services/db';
+	import { getPublicCameras } from '$lib/services/db';
 	import { onChangeScene } from '$lib/services/realtime';
+
+	const userId = page.params.userId ?? '';
 
 	let spectatorCameras = $state<(Camera & { url: string })[]>([]);
 	let activeCameraId = $state('');
 
 	onMount(async () => {
-		const loaded = await getCameras();
+		const loaded = await getPublicCameras(userId);
 		spectatorCameras = loaded.map((camera) => ({
 			...camera,
-			url: `${camera.url}${camera.url.includes('?') ? '&' : '?'}clean&autoplay&transparent`
+			url: `${camera.url}${camera.url.includes('?') ? '&' : '?'}clean&autoplay&transparent&cover`
 		}));
 		activeCameraId = spectatorCameras[0]?.id ?? '';
 	});
 
-	const unsubscribe = onChangeScene((cameraId) => {
+	const unsubscribe = onChangeScene(userId, (cameraId) => {
 		if (spectatorCameras.some((camera) => camera.id === cameraId)) {
 			activeCameraId = cameraId;
 		}

@@ -23,6 +23,8 @@ let deletingCameraId = $state<string | null>(null);
 let directorUserId = $state<string | null>(null);
 let copiedCameraId = $state<string | null>(null);
 let copiedTimeout: ReturnType<typeof setTimeout> | null = null;
+let copiedProgramUrl = $state(false);
+let copiedProgramTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const syncSceneState = () => {
 if (!cameras.some((camera) => camera.id === previewCameraId)) {
@@ -121,6 +123,34 @@ clearTimeout(copiedTimeout);
 copiedTimeout = null;
 }
 copiedCameraId = null;
+if (copiedProgramTimeout) {
+clearTimeout(copiedProgramTimeout);
+copiedProgramTimeout = null;
+}
+copiedProgramUrl = false;
+};
+
+const handleCopyProgramUrl = async () => {
+if (!directorUserId || typeof window === 'undefined' || !navigator.clipboard) {
+error = 'No se pudo copiar la URL del programa.';
+return;
+}
+
+try {
+const url = new URL(`/program/${directorUserId}`, window.location.origin).toString();
+await navigator.clipboard.writeText(url);
+error = '';
+copiedProgramUrl = true;
+if (copiedProgramTimeout) {
+clearTimeout(copiedProgramTimeout);
+}
+copiedProgramTimeout = setTimeout(() => {
+copiedProgramUrl = false;
+copiedProgramTimeout = null;
+}, 1500);
+} catch {
+error = 'No se pudo copiar la URL del programa.';
+}
 };
 
 const handleCopyViewUrl = async (cameraId: string) => {
@@ -230,6 +260,21 @@ unsubscribe?.();
 
 <main class="director-panel">
 <h1>Panel de Control del Director</h1>
+
+{#if directorUserId}
+<div class="program-url-bar">
+<span class="program-url-label">Salida de Programa (OBS)</span>
+<code class="program-url-text">{typeof window !== 'undefined' ? new URL(`/program/${directorUserId}`, window.location.origin).toString() : `/program/${directorUserId}`}</code>
+<button
+type="button"
+class="copy-program-button"
+title={copiedProgramUrl ? '¡Copiado!' : 'Copiar URL del Programa'}
+onclick={() => void handleCopyProgramUrl()}
+>
+{copiedProgramUrl ? '✅ Copiado' : '📋 Copiar URL'}
+</button>
+</div>
+{/if}
 
 <form class="camera-form" onsubmit={handleAddCamera}>
 <label>
@@ -639,5 +684,51 @@ opacity: 1;
 transform: none;
 pointer-events: auto;
 }
+}
+
+.program-url-bar {
+display: flex;
+align-items: center;
+gap: 0.65rem;
+flex-wrap: wrap;
+margin-bottom: 1rem;
+padding: 0.65rem 0.85rem;
+border: 1px solid #cbd5e1;
+border-radius: 0.6rem;
+background: #f8fafc;
+font-size: 0.9rem;
+}
+
+.program-url-label {
+font-weight: 700;
+color: #0f172a;
+white-space: nowrap;
+}
+
+.program-url-text {
+flex: 1;
+min-width: 0;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+color: #334155;
+font-size: 0.85rem;
+}
+
+.copy-program-button {
+flex-shrink: 0;
+padding: 0.4rem 0.75rem;
+border: 1px solid #cbd5e1;
+border-radius: 0.5rem;
+background: #fff;
+color: #334155;
+font-size: 0.85rem;
+font-weight: 600;
+transition: background-color 0.15s ease;
+}
+
+.copy-program-button:hover,
+.copy-program-button:focus-visible {
+background: #e2e8f0;
 }
 </style>
